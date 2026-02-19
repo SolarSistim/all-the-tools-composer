@@ -816,8 +816,7 @@ export class ComposePreview {
   }
 
   onMouseUp(event: MouseEvent): void {
-    // Don't sync clicks/selections inside editable elements back to Monaco
-    if ((event.target as HTMLElement)?.isContentEditable) return;
+    const isEditable = (event.target as HTMLElement)?.isContentEditable;
 
     setTimeout(() => {
       const sel = window.getSelection();

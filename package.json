@@ -6,7 +6,8 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
-    "compose:server": "node scripts/compose-server.js"
+    "compose:server": "node scripts/compose-server.js",
+    "dev": "concurrently -n server,angular -c cyan,green \"node scripts/compose-server.js\" \"ng serve\""
   },
   "dependencies": {
     "@angular/animations": "^20.3.14",
@@ -27,6 +28,7 @@
     "zone.js": "~0.15.0"
   },
   "devDependencies": {
-    "@types/node": "^20.17.19"
+    "@types/node": "^20.17.19",
+    "concurrently": "^9.2.1"
   }
 }

@@ -1,0 +1,100 @@
+<!-- Section tabs -->
+<div class="section-tabs">
+  @for (sec of sections; track sec.key) {
+    <button
+      class="tab-btn"
+      [class.active]="activeSection() === sec.key"
+      (click)="selectSection(sec.key)"
+    >
+      <span>{{ sec.icon }}</span>
+      <span>{{ sec.label }}</span>
+    </button>
+  }
+</div>
+
+<!-- File list search -->
+<div class="search-wrap">
+  <input
+    class="search-input"
+    type="text"
+    placeholder="Filter files…"
+    [value]="filterText()"
+    (input)="filterText.set($any($event.target).value)"
+  />
+</div>
+
+<!-- Pinned index file -->
+@if (indexFile()) {
+  <button
+    class="file-item index-item"
+    [class.active]="selectedFile()?.slug === indexFile()!.slug"
+    (click)="selectFile(indexFile()!)"
+    [title]="indexFile()!.relativePath"
+  >
+    <span class="index-icon">⊞</span>
+    <span class="file-slug">{{ indexFile()!.filename }}</span>
+    <span class="index-label">index</span>
+  </button>
+}
+
+<!-- Files -->
+<div class="file-list">
+  @if (loading()) {
+    <div class="state-msg">Loading…</div>
+  } @else if (error()) {
+    <div class="state-msg error">
+      {{ error() }}
+      <br />
+      <small>Is compose-server running on port 3001?</small>
+    </div>
+  } @else if (filteredFiles().length === 0) {
+    <div class="state-msg">No files found.</div>
+  } @else {
+    @for (file of filteredFiles(); track file.slug) {
+      @if (pendingDelete()?.slug === file.slug) {
+        <div class="file-item confirm-delete-row">
+          <span class="confirm-msg">Delete {{ file.slug }}?</span>
+          <button class="confirm-yes" (click)="confirmDelete(file)">Delete</button>
+          <button class="confirm-no" (click)="pendingDelete.set(null)">Cancel</button>
+        </div>
+      } @else {
+        <div
+          class="file-item"
+          [class.active]="selectedFile()?.slug === file.slug"
+          (click)="selectFile(file)"
+          [title]="file.relativePath"
+        >
+          <span class="file-slug">{{ file.slug }}</span>
+          <span class="file-size">{{ formatSize(file.size) }}</span>
+          <button
+            class="delete-btn"
+            (click)="requestDelete(file, $event)"
+            title="Delete file"
+          >×</button>
+        </div>
+      }
+    }
+  }
+</div>
+
+<!-- New file -->
+<div class="new-file-area">
+  @if (showNewFileInput()) {
+    <div class="new-file-row">
+      <input
+        class="new-file-input"
+        type="text"
+        placeholder="new-article-slug"
+        [(ngModel)]="newSlug"
+        (keydown.enter)="createFile()"
+        (keydown.escape)="showNewFileInput.set(false)"
+        #newFileInput
+      />
+      <button class="create-btn" (click)="createFile()">Create</button>
+    </div>
+  } @else {
+    <button class="new-btn" (click)="showNewFileInput.set(true)">
+      + New File
+    </button>
+  }
+</div>

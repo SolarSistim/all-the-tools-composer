@@ -8,6 +8,7 @@ export interface FileEntry {
   relativePath: string;
   mtime: string;
   size: number;
+  isIndex?: boolean;
 }
 
 export interface GitStatus {
@@ -26,6 +27,20 @@ export interface ServerConfig {
   netlifyToken: string;     // masked: "***xxxx"
   netlifySiteId: string;
   mainSiteBuildHook: string;
+}
+
+export interface PullStatus {
+  running: boolean;
+  lastPulledAt: string | null;
+  counts: { blog?: number; resources?: number; artists?: number };
+  contentExists: boolean;
+}
+
+export interface PullResult {
+  success: boolean;
+  message: string;
+  counts: { blog: number; resources: number; artists: number };
+  lastPulledAt: string;
 }
 
 const COMPOSE_API = 'http://localhost:3001/api';
@@ -51,8 +66,18 @@ export class ComposeService {
     });
   }
 
+  deleteFile(relativePath: string): Observable<{ success: boolean }> {
+    return this.http.delete<{ success: boolean }>(
+      `${COMPOSE_API}/file?path=${encodeURIComponent(relativePath)}`
+    );
+  }
+
   deploy(message: string): Observable<DeployResult> {
     return this.http.post<DeployResult>(`${COMPOSE_API}/deploy`, { message });
+  }
+
+  rebuild(): Observable<{ success: boolean; message: string }> {
+    return this.http.post<{ success: boolean; message: string }>(`${COMPOSE_API}/rebuild`, {});
   }
 
   getServerConfig(): Observable<ServerConfig> {
@@ -61,5 +86,13 @@ export class ComposeService {
 
   saveServerConfig(config: Partial<ServerConfig>): Observable<{ success: boolean }> {
     return this.http.post<{ success: boolean }>(`${COMPOSE_API}/config`, config);
+  }
+
+  getPullStatus(): Observable<PullStatus> {
+    return this.http.get<PullStatus>(`${COMPOSE_API}/pull-status`);
+  }
+
+  pullFromCDN(): Observable<PullResult> {
+    return this.http.post<PullResult>(`${COMPOSE_API}/pull`, {});
   }
 }

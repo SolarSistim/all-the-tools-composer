@@ -262,7 +262,7 @@ export class JsonEditor implements OnDestroy {
    * Find `text` in the model and place the cursor at `charOffset` characters
    * into the first match. Brings Monaco into focus.
    */
-  navigateToText(text: string, charOffset = 0): void {
+  navigateToText(text: string, charOffset = 0, focus = true): void {
     if (!this.editor || !text) return;
     const model = this.editor.getModel();
     if (!model) return;
@@ -279,7 +279,7 @@ export class JsonEditor implements OnDestroy {
 
     this.editor.setPosition(targetPos);
     this.editor.revealPositionInCenter(targetPos);
-    this.editor.focus();
+    if (focus) this.editor.focus();
   }
 
   /**

@@ -1,13 +1,14 @@
 import {
   Component,
+  OnInit,
   ViewChild,
   inject,
   signal,
   computed,
   HostListener,
 } from '@angular/core';
-import { ServerConfig } from '../compose.service';
-import { CommonModule } from '@angular/common';
+import { ServerConfig, PullStatus } from '../compose.service';
+import { CommonModule, DatePipe } from '@angular/common';
 import { ComposeService } from '../compose.service';
 import {
   FileBrowser,
@@ -103,7 +104,7 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
 @Component({
   selector: 'app-compose-shell',
   standalone: true,
-  imports: [CommonModule, FileBrowser, JsonEditor, BlockPalette, ComposePreview],
+  imports: [CommonModule, DatePipe, FileBrowser, JsonEditor, BlockPalette, ComposePreview],
   host: {
     '[class.resizing]': 'isDraggingResize()',
   },
@@ -154,6 +155,16 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
           @if (state() === 'deploying') { Publishing… } @else { ↑ Publish }
         </button>
 
+        <!-- Pull from CDN -->
+        <button
+          class="tb-btn pull-btn"
+          (click)="pullContent()"
+          [disabled]="pullRunning()"
+          [title]="pullStatus()?.lastPulledAt ? 'Last pulled: ' + (pullStatus()!.lastPulledAt | date:'short') : 'Pull latest content from json.allthethings.dev'"
+        >
+          @if (pullRunning()) { ↓ Pulling… } @else { ↓ Pull }
+        </button>
+
         <!-- Config -->
         <button
           class="tb-btn config-btn"
@@ -171,6 +182,7 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
       <app-file-browser
         (fileSelected)="onFileSelected($event)"
         (newFileRequested)="onNewFile($event)"
+        (fileDeleted)="onFileDeleted($event)"
       />
 
       <!-- Center: Monaco editor -->
@@ -193,26 +205,54 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
             {{ statusMessage() }}
           </div>
         }
+        @if (pullMessage()) {
+          <div class="status-bar pull-status">
+            {{ pullMessage() }}
+          </div>
+        }
       </div>
 
       <!-- Resize handle -->
       <div class="resize-handle" (mousedown)="onResizeStart($event)"></div>
 
       <!-- Preview pane -->
-      <app-compose-preview
-        #preview
-        [content]="currentEditorContent()"
-        [section]="activeSection()"
-        (previewClick)="onPreviewClick($event)"
-        (previewSelect)="onPreviewSelect($event)"
-        (contentChange)="onPreviewContentChange($event)"
-      />
+      @if (currentFile()?.isIndex) {
+        <div class="index-preview-placeholder">
+          Editing index file {{ currentFile()!.filename }}
+        </div>
+      } @else {
+        <app-compose-preview
+          #preview
+          [content]="currentEditorContent()"
+          [section]="activeSection()"
+          (previewClick)="onPreviewClick($event)"
+          (previewSelect)="onPreviewSelect($event)"
+          (contentChange)="onPreviewContentChange($event)"
+        />
+      }
 
       <!-- Block palette — blog only -->
       @if (activeSection() === 'blog') {
         <app-block-palette (blockInserted)="onBlockInsert($event)" />
       }
     </div>
+
+    <!-- Unsaved changes dialog -->
+    @if (showUnsavedDialog()) {
+      <div class="dialog-backdrop">
+        <div class="dialog" (click)="$event.stopPropagation()">
+          <h3 class="dialog-title unsaved-title">Unsaved Changes</h3>
+          <p class="dialog-desc">
+            <strong class="file-highlight">{{ currentFile()?.slug }}</strong> has unsaved changes.
+            Opening <strong class="file-highlight">{{ pendingFileSelect()?.file?.slug }}</strong> will discard them.
+          </p>
+          <div class="dialog-actions">
+            <button class="tb-btn" (click)="cancelDiscard()">Keep Editing</button>
+            <button class="tb-btn discard-btn" (click)="confirmDiscard()">Discard &amp; Open</button>
+          </div>
+        </div>
+      </div>
+    }
 
     <!-- Publish dialog -->
     @if (showDeployDialog()) {
@@ -225,6 +265,46 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
           <div class="dialog-actions">
             <button class="tb-btn" (click)="showDeployDialog.set(false)">Cancel</button>
             <button class="tb-btn deploy-btn" (click)="deploy()">Publish ↑</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Deploy result dialog -->
+    @if (deployResult()) {
+      <div class="dialog-backdrop">
+        <div class="dialog result-dialog" (click)="$event.stopPropagation()">
+          @if (deployResult()!.success) {
+            <h3 class="dialog-title result-success">✓ Published Successfully</h3>
+            <p class="dialog-desc">{{ deployResult()!.message }}</p>
+
+            @if (rebuildState() === 'idle') {
+              <p class="dialog-desc rebuild-hint">
+                Click below to rebuild the main site so prerendered article pages pick up the new content.
+              </p>
+            } @else if (rebuildState() === 'pending') {
+              <p class="dialog-desc">Triggering main site rebuild…</p>
+            } @else if (rebuildState() === 'success') {
+              <p class="rebuild-ok">✓ {{ rebuildMessage() }}</p>
+            } @else if (rebuildState() === 'error') {
+              <p class="rebuild-err">✗ {{ rebuildMessage() }}</p>
+            }
+          } @else {
+            <h3 class="dialog-title result-error">✗ Publish Failed</h3>
+            <p class="dialog-desc error-detail">{{ deployResult()!.message }}</p>
+          }
+
+          <div class="dialog-actions">
+            <button class="tb-btn" (click)="closeDeployResult()">Close</button>
+            @if (deployResult()!.success && rebuildState() !== 'success') {
+              <button
+                class="tb-btn deploy-btn"
+                (click)="triggerRebuild()"
+                [disabled]="rebuildState() === 'pending'"
+              >
+                @if (rebuildState() === 'pending') { Rebuilding… } @else { ↻ Rebuild Main Site }
+              </button>
+            }
           </div>
         </div>
       </div>
@@ -362,6 +442,9 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
     .deploy-btn { border-color: #569cd6; color: #569cd6; }
     .deploy-btn:hover:not(:disabled) { background: #1b3a5a; }
 
+    .pull-btn { border-color: #b5cea8; color: #b5cea8; }
+    .pull-btn:hover:not(:disabled) { background: #2a3d2a; }
+
     .config-btn { border-color: #888; color: #aaa; }
     .config-btn:hover:not(:disabled) { background: #3c3c3c; color: #fff; border-color: #aaa; }
 
@@ -371,13 +454,14 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
       flex: 1;
       display: grid;
       /* grid-template-columns set via [style] binding */
-      width: 100%;       /* constrain so 1fr steals from editor, not grows rightward */
+      grid-template-rows: 1fr;   /* gives the row a definite height so % heights on children resolve */
+      width: 100%;
       min-height: 0;
       overflow: hidden;
     }
 
-    /* Prevent grid children from overflowing their columns */
-    .pane-container > * { min-width: 0; }
+    /* Prevent grid children from overflowing their cell */
+    .pane-container > * { min-width: 0; min-height: 0; }
 
     /* Resizing — lock cursor and suppress text selection across whole shell */
     :host.resizing {
@@ -448,6 +532,18 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
     }
 
     .status-bar.error { background: #5a1d1d; color: #f48771; }
+    .pull-status { background: #1a3a1a; color: #b5cea8; }
+
+    .index-preview-placeholder {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1e1e1e;
+      color: #555;
+      font-size: 14px;
+      border-left: 1px solid #333;
+    }
 
 
     /* ── Deploy dialog ── */
@@ -496,6 +592,35 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
       gap: 8px;
     }
 
+    /* ── Deploy result dialog ── */
+    .result-dialog { min-width: 380px; }
+
+    .result-success { color: #4ec9b0; }
+    .result-error   { color: #f48771; }
+
+    .rebuild-hint { color: #888; font-size: 11px; margin-top: -4px; }
+
+    .rebuild-ok {
+      font-family: 'Consolas', monospace;
+      font-size: 12px;
+      color: #4ec9b0;
+      margin: 0 0 12px;
+    }
+
+    .rebuild-err {
+      font-family: 'Consolas', monospace;
+      font-size: 12px;
+      color: #f48771;
+      margin: 0 0 12px;
+    }
+
+    .error-detail {
+      color: #f48771;
+      font-family: 'Consolas', monospace;
+      font-size: 12px;
+      word-break: break-all;
+    }
+
     /* ── Config dialog ── */
     .config-dialog { width: 520px; }
 
@@ -539,7 +664,7 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
     }
   `],
 })
-export class ComposeShell {
+export class ComposeShell implements OnInit {
   @ViewChild('editor') editorRef!: JsonEditor;
   @ViewChild('preview') previewRef!: ComposePreview;
   private _suppressEditorEvents = false;
@@ -555,19 +680,32 @@ export class ComposeShell {
   isDirty = signal(false);
   state = signal<EditorState>('idle');
   statusMessage = signal<string>('');
-  previewWidth = signal(300);
+  previewWidth = signal(
+    // Blog layout: 280px browser + 4px handle + 240px palette = 524px fixed
+    // Half the remaining space gives equal editor / preview widths on load.
+    Math.max(200, Math.floor((window.innerWidth - 524) / 2))
+  );
   isDraggingResize = signal(false);
   private _lastDragX = 0;
 
   gridTemplate = computed(() => {
     const pw = this.previewWidth();
     return this.activeSection() === 'blog'
-      ? `240px 1fr 4px ${pw}px 240px`
-      : `240px 1fr 4px ${pw}px`;
+      ? `270px 1fr 4px ${pw}px 240px`
+      : `290px 1fr 4px ${pw}px`;
   });
+
+  // Unsaved-changes dialog
+  showUnsavedDialog = signal(false);
+  pendingFileSelect = signal<{ file: FileEntry; section: SectionKey } | null>(null);
 
   // Deploy dialog
   showDeployDialog = signal(false);
+
+  // Deploy result dialog
+  deployResult = signal<{ success: boolean; message: string } | null>(null);
+  rebuildState = signal<'idle' | 'pending' | 'success' | 'error'>('idle');
+  rebuildMessage = signal('');
 
   // Config dialog
   showConfigDialog = signal(false);
@@ -575,6 +713,11 @@ export class ComposeShell {
   configSiteIdInput = signal('');
   configBuildHookInput = signal('');
   configSaveStatus = signal('');
+
+  // Pull from CDN
+  pullStatus = signal<PullStatus | null>(null);
+  pullRunning = signal(false);
+  pullMessage = signal('');
 
   openConfigDialog(): void {
     this.configSaveStatus.set('');
@@ -586,6 +729,31 @@ export class ComposeShell {
         this.showConfigDialog.set(true);
       },
       error: () => this.showConfigDialog.set(true),
+    });
+  }
+
+  ngOnInit(): void {
+    this.compose.getPullStatus().subscribe({
+      next: (status) => this.pullStatus.set(status),
+      error: () => {},
+    });
+  }
+
+  pullContent(): void {
+    this.pullRunning.set(true);
+    this.pullMessage.set('');
+    this.compose.pullFromCDN().subscribe({
+      next: (result) => {
+        this.pullRunning.set(false);
+        this.pullMessage.set(result.message);
+        this.compose.getPullStatus().subscribe({ next: (s) => this.pullStatus.set(s), error: () => {} });
+        setTimeout(() => this.pullMessage.set(''), 5000);
+      },
+      error: (err) => {
+        this.pullRunning.set(false);
+        this.pullMessage.set(`Pull failed: ${err.error?.error || err.message}`);
+        setTimeout(() => this.pullMessage.set(''), 6000);
+      },
     });
   }
 
@@ -638,10 +806,9 @@ export class ComposeShell {
 
   onFileSelected(event: { file: FileEntry; section: SectionKey }) {
     if (this.isDirty()) {
-      const ok = confirm(
-        `You have unsaved changes in ${this.currentFile()?.slug}. Discard and open ${event.file.slug}?`
-      );
-      if (!ok) return;
+      this.pendingFileSelect.set(event);
+      this.showUnsavedDialog.set(true);
+      return;
     }
 
     this.activeSection.set(event.section);
@@ -663,6 +830,28 @@ export class ComposeShell {
         this.statusMessage.set(`Error: ${err.message}`);
       },
     });
+  }
+
+  confirmDiscard(): void {
+    const pending = this.pendingFileSelect();
+    this.showUnsavedDialog.set(false);
+    this.pendingFileSelect.set(null);
+    if (pending) this.onFileSelected(pending);
+  }
+
+  cancelDiscard(): void {
+    this.showUnsavedDialog.set(false);
+    this.pendingFileSelect.set(null);
+  }
+
+  onFileDeleted(file: FileEntry) {
+    if (this.currentFile()?.slug === file.slug) {
+      this.currentFile.set(null);
+      this.editorValue.set('');
+      this.currentEditorContent.set('');
+      this.isDirty.set(false);
+      this.statusMessage.set('');
+    }
   }
 
   onNewFile(event: { slug: string; section: SectionKey }) {
@@ -707,7 +896,7 @@ export class ComposeShell {
 
   onPreviewClick(loc: { text: string; offset: number }): void {
     this._suppressEditorEvents = true;
-    this.editorRef?.navigateToText(loc.text, loc.offset);
+    this.editorRef?.navigateToText(loc.text, loc.offset, false);
     setTimeout(() => this._suppressEditorEvents = false, 600);
   }
 
@@ -778,20 +967,43 @@ export class ComposeShell {
 
   deploy() {
     this.showDeployDialog.set(false);
+    this.rebuildState.set('idle');
+    this.rebuildMessage.set('');
     this.state.set('deploying');
     this.statusMessage.set('Publishing to Netlify…');
 
     this.compose.deploy('').subscribe({
       next: (result) => {
         this.state.set('idle');
-        this.statusMessage.set(result.message || 'Published successfully');
-        setTimeout(() => this.statusMessage.set(''), 6000);
+        this.statusMessage.set('');
+        this.deployResult.set({ success: true, message: result.message || 'Published successfully.' });
       },
       error: (err) => {
-        this.state.set('error');
+        this.state.set('idle');
+        this.statusMessage.set('');
         const msg = err.error?.error || err.message;
-        this.statusMessage.set(`Publish failed: ${msg}`);
+        this.deployResult.set({ success: false, message: msg });
       },
     });
+  }
+
+  triggerRebuild(): void {
+    this.rebuildState.set('pending');
+    this.compose.rebuild().subscribe({
+      next: (result) => {
+        this.rebuildState.set('success');
+        this.rebuildMessage.set(result.message || 'Main site rebuild triggered.');
+      },
+      error: (err) => {
+        this.rebuildState.set('error');
+        this.rebuildMessage.set(err.error?.error || err.message || 'Rebuild failed.');
+      },
+    });
+  }
+
+  closeDeployResult(): void {
+    this.deployResult.set(null);
+    this.rebuildState.set('idle');
+    this.rebuildMessage.set('');
   }
 }

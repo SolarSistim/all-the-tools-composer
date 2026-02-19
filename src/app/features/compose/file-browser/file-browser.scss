@@ -1,0 +1,253 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #252526;
+  color: #ccc;
+  font-family: 'Consolas', monospace;
+  font-size: 12px;
+  border-right: 1px solid #333;
+}
+
+.section-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+  border-bottom: 1px solid #333;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: transparent;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  border-radius: 3px;
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  transition: background 0.1s;
+
+  &:hover { background: #2d2d2d; color: #ddd; }
+  &.active { background: #094771; color: #fff; }
+}
+
+.index-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  background: #1a2a1a;
+  border: none;
+  border-bottom: 1px solid #2a4a2a;
+  color: #b5cea8;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+
+  &:hover { background: #223322; }
+  &.active { background: #2a4a2a; color: #d4e8d0; }
+}
+
+.index-icon {
+  font-size: 11px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.index-label {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: #2a4a2a;
+  color: #b5cea8;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid #3a6a3a;
+}
+
+.search-wrap {
+  padding: 6px;
+  border-bottom: 1px solid #333;
+}
+
+.search-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #3c3c3c;
+  border: 1px solid #555;
+  color: #ccc;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: inherit;
+
+  &:focus { outline: none; border-color: #569cd6; }
+}
+
+.file-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px;
+}
+
+.state-msg {
+  padding: 12px 8px;
+  color: #666;
+  font-size: 12px;
+
+  &.error { color: #f48771; }
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  border-radius: 3px;
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  transition: background 0.1s;
+
+  &:hover { background: #2d2d2d; }
+  &.active { background: #094771; color: #fff; }
+
+  &:hover .delete-btn { display: block; }
+}
+
+.file-slug {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+  padding-right: 4px;
+}
+
+.file-size {
+  font-size: 10px;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.delete-btn {
+  display: none;
+  flex-shrink: 0;
+  margin-left: 4px;
+  padding: 0 5px;
+  background: transparent;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 3px;
+
+  &:hover { background: #5a1d1d; color: #f48771; }
+}
+
+.confirm-delete-row {
+  background: #2a1a1a;
+  border-radius: 3px;
+}
+
+.confirm-msg {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #f48771;
+  font-size: 11px;
+}
+
+.confirm-yes {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  background: #5a1d1d;
+  border: 1px solid #f48771;
+  color: #f48771;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: inherit;
+
+  &:hover { background: #7a2a2a; }
+}
+
+.confirm-no {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  background: transparent;
+  border: 1px solid #555;
+  color: #999;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: inherit;
+
+  &:hover { background: #2d2d2d; color: #ccc; }
+}
+
+.new-file-area {
+  padding: 8px;
+  border-top: 1px solid #333;
+}
+
+.new-btn {
+  width: 100%;
+  padding: 6px;
+  background: #094771;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 12px;
+  transition: background 0.1s;
+
+  &:hover { background: #0e639c; color: #fff; }
+}
+
+.new-file-row {
+  display: flex;
+  gap: 4px;
+}
+
+.new-file-input {
+  flex: 1;
+  background: #3c3c3c;
+  border: 1px solid #555;
+  color: #ccc;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: inherit;
+
+  &:focus { outline: none; border-color: #569cd6; }
+}
+
+.create-btn {
+  padding: 4px 10px;
+  background: #0e639c;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 12px;
+
+  &:hover { background: #1177bb; }
+}

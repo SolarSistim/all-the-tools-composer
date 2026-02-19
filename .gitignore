@@ -38,3 +38,6 @@ Thumbs.db
 
 # Local config (contains Netlify hook URL — do not commit)
 scripts/compose-config.json
+
+# Downloaded content (pulled from json.allthethings.dev — do not commit)
+/content
