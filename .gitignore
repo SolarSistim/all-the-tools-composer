@@ -35,3 +35,6 @@ testem.log
 # System Files
 .DS_Store
 Thumbs.db
+
+# Local config (contains Netlify hook URL — do not commit)
+scripts/compose-config.json
