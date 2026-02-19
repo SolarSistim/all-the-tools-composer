@@ -19,30 +19,45 @@ const PORT = 3001;
 const JSON_REPO = path.resolve(__dirname, '..', '..', 'all-the-tools-json');
 
 // ── Netlify deploy via API ────────────────────────────────────────────────────
-// Reads netlifyToken + netlifySiteId from scripts/compose-config.json
+// Reads netlifyToken + netlifySiteId + mainSiteBuildHook from scripts/compose-config.json
 // No CLI login needed — token travels with the project config file.
 let netlifyToken = process.env.NETLIFY_TOKEN || '';
 let netlifySiteId = process.env.NETLIFY_SITE_ID || '';
+let mainSiteBuildHook = process.env.MAIN_SITE_BUILD_HOOK || '';
 
 const CONFIG_FILE = path.join(__dirname, 'compose-config.json');
 if (fs.existsSync(CONFIG_FILE)) {
   try {
     const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
-    netlifyToken  = netlifyToken  || cfg.netlifyToken  || '';
-    netlifySiteId = netlifySiteId || cfg.netlifySiteId || '';
+    netlifyToken     = netlifyToken     || cfg.netlifyToken     || '';
+    netlifySiteId    = netlifySiteId    || cfg.netlifySiteId    || '';
+    mainSiteBuildHook = mainSiteBuildHook || cfg.mainSiteBuildHook || '';
   } catch (e) {
     console.warn('Warning: could not read compose-config.json:', e.message);
   }
 }
 
 /**
- * Zips JSON_REPO and POSTs it to the Netlify deploy API.
- * No CLI required — uses the personal access token from config.
+ * Zips JSON_REPO into a buffer, then POSTs it to the Netlify deploy API.
+ * Buffers first so we can set an accurate Content-Length header.
  */
 function deployViaZip() {
-  return new Promise((resolve, reject) => {
+  // Step 1: build zip in memory
+  const buildZip = () => new Promise((resolve, reject) => {
     const archive = archiver('zip', { zlib: { level: 6 } });
+    const chunks = [];
+    archive.on('data', (chunk) => chunks.push(chunk));
+    archive.on('end', () => resolve(Buffer.concat(chunks)));
+    archive.on('error', reject);
+    archive.glob('**/*', {
+      cwd: JSON_REPO,
+      ignore: ['**/.git/**', '**/node_modules/**', '**/.DS_Store'],
+    });
+    archive.finalize();
+  });
 
+  // Step 2: POST the buffer to Netlify
+  const postZip = (zipBuffer) => new Promise((resolve, reject) => {
     const req = https.request(
       {
         hostname: 'api.netlify.com',
@@ -51,28 +66,57 @@ function deployViaZip() {
         headers: {
           'Authorization': `Bearer ${netlifyToken}`,
           'Content-Type': 'application/zip',
-          'Transfer-Encoding': 'chunked',
+          'Content-Length': zipBuffer.length,
         },
       },
       (res) => {
         let body = '';
         res.on('data', (chunk) => (body += chunk));
         res.on('end', () => {
+          console.log(`Netlify API response ${res.statusCode}:`, body.slice(0, 300));
           try { resolve({ status: res.statusCode, data: JSON.parse(body) }); }
           catch { resolve({ status: res.statusCode, body }); }
         });
       }
     );
-
     req.on('error', reject);
-    archive.on('error', reject);
+    req.write(zipBuffer);
+    req.end();
+  });
 
-    archive.pipe(req);
-    archive.glob('**/*', {
-      cwd: JSON_REPO,
-      ignore: ['**/.git/**', '**/node_modules/**', '**/.DS_Store'],
-    });
-    archive.finalize();
+  return buildZip().then((buf) => {
+    console.log(`Zip built: ${(buf.length / 1024).toFixed(1)} KB — posting to Netlify...`);
+    return postZip(buf);
+  });
+}
+
+/**
+ * POSTs to the Netlify build hook for the main allthethings.dev site.
+ * This triggers a full rebuild + prerender so article pages pick up
+ * any JSON content that was just deployed to json.allthethings.dev.
+ */
+function triggerMainSiteRebuild() {
+  return new Promise((resolve, reject) => {
+    // Build hook URLs look like: https://api.netlify.com/build_hooks/<id>
+    const url = new URL(mainSiteBuildHook);
+    const req = https.request(
+      {
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+        method: 'POST',
+        headers: { 'Content-Length': 0 },
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => (body += chunk));
+        res.on('end', () => {
+          console.log(`Main site build hook response ${res.statusCode}:`, body.slice(0, 200));
+          resolve({ status: res.statusCode });
+        });
+      }
+    );
+    req.on('error', reject);
+    req.end();
   });
 }
 
@@ -119,6 +163,40 @@ function safeFullPath(relPath) {
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
+
+// GET /api/config — return current config (token is masked)
+app.get('/api/config', (req, res) => {
+  res.json({
+    netlifyToken: netlifyToken ? '***' + netlifyToken.slice(-4) : '',
+    netlifySiteId,
+    mainSiteBuildHook,
+  });
+});
+
+// POST /api/config — save config values to compose-config.json
+app.post('/api/config', (req, res) => {
+  const { netlifyToken: newToken, netlifySiteId: newSiteId, mainSiteBuildHook: newHook } = req.body;
+
+  // Update in-memory values
+  if (newToken) netlifyToken = newToken;
+  if (newSiteId !== undefined) netlifySiteId = newSiteId;
+  if (newHook !== undefined) mainSiteBuildHook = newHook;
+
+  // Persist to compose-config.json
+  try {
+    let cfg = {};
+    if (fs.existsSync(CONFIG_FILE)) {
+      cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+    }
+    if (newToken) cfg.netlifyToken = newToken;
+    if (newSiteId !== undefined) cfg.netlifySiteId = newSiteId;
+    if (newHook !== undefined) cfg.mainSiteBuildHook = newHook;
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2) + '\n', 'utf-8');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/sections — list available sections
 app.get('/api/sections', (req, res) => {
@@ -203,15 +281,35 @@ app.post('/api/deploy', async (req, res) => {
     });
   }
 
+  if (!fs.existsSync(JSON_REPO)) {
+    return res.status(500).json({ error: `JSON repo not found at: ${JSON_REPO}` });
+  }
+
   try {
+    // Step 1: deploy JSON content to json.allthethings.dev
+    console.log(`Deploying ${JSON_REPO} to Netlify site ${netlifySiteId}...`);
     const result = await deployViaZip();
-    if (result.status >= 200 && result.status < 300) {
-      res.json({ success: true, message: 'Published to Netlify successfully.' });
-    } else {
+    if (result.status < 200 || result.status >= 300) {
       const detail = result.data?.message || result.body || result.status;
-      res.status(500).json({ error: `Netlify API error: ${detail}` });
+      return res.status(500).json({ error: `Netlify API error: ${detail}` });
     }
+
+    // Step 2: trigger rebuild of allthethings.dev so prerendered pages pick up new content
+    if (mainSiteBuildHook) {
+      console.log('Triggering main site rebuild...');
+      try {
+        await triggerMainSiteRebuild();
+        return res.json({ success: true, message: 'JSON deployed and main site rebuild triggered.' });
+      } catch (hookErr) {
+        // JSON deployed fine; just the rebuild hook failed — warn but don't error
+        console.warn('Build hook failed:', hookErr.message);
+        return res.json({ success: true, message: 'JSON deployed. Warning: main site rebuild hook failed — check compose-config.json.' });
+      }
+    }
+
+    res.json({ success: true, message: 'JSON deployed. (No main site build hook configured.)' });
   } catch (err) {
+    console.error('Deploy error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -223,5 +321,6 @@ app.listen(PORT, () => {
   console.log(`  JSON repo: ${JSON_REPO}`);
   console.log(`  Sections: blog, resources, artists`);
   const netlifyOk = netlifyToken && netlifySiteId;
-  console.log(`  Netlify deploy: ${netlifyOk ? '✓ configured' : '✗ NOT configured (add netlifyToken + netlifySiteId to scripts/compose-config.json)'}\n`);
+  console.log(`  Netlify deploy: ${netlifyOk ? '✓ configured' : '✗ NOT configured (add netlifyToken + netlifySiteId to scripts/compose-config.json)'}`);
+  console.log(`  Main site rebuild: ${mainSiteBuildHook ? '✓ configured' : '✗ NOT configured (add mainSiteBuildHook to scripts/compose-config.json)'}\n`);
 });

@@ -22,6 +22,12 @@ export interface DeployResult {
   error?: string;
 }
 
+export interface ServerConfig {
+  netlifyToken: string;     // masked: "***xxxx"
+  netlifySiteId: string;
+  mainSiteBuildHook: string;
+}
+
 const COMPOSE_API = 'http://localhost:3001/api';
 
 @Injectable({ providedIn: 'root' })
@@ -49,7 +55,11 @@ export class ComposeService {
     return this.http.post<DeployResult>(`${COMPOSE_API}/deploy`, { message });
   }
 
-  getGitStatus(): Observable<GitStatus> {
-    return this.http.get<GitStatus>(`${COMPOSE_API}/git-status`);
+  getServerConfig(): Observable<ServerConfig> {
+    return this.http.get<ServerConfig>(`${COMPOSE_API}/config`);
+  }
+
+  saveServerConfig(config: Partial<ServerConfig>): Observable<{ success: boolean }> {
+    return this.http.post<{ success: boolean }>(`${COMPOSE_API}/config`, config);
   }
 }

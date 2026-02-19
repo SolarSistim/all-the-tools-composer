@@ -221,8 +221,103 @@ import { SectionKey } from '../file-browser/file-browser';
           </div>
         </div>
 
+      } @else if (section() === 'resources') {
+        <!-- ── Resource ── -->
+        <div class="article-wrap">
+          <div class="resource-header">
+            <div class="resource-badges">
+              @if (parsed()?.category) {
+                <span class="category-badge">{{ parsed().category }}</span>
+              }
+              @if (parsed()?.difficulty) {
+                <span class="difficulty-badge">{{ parsed().difficulty }}</span>
+              }
+              @if (parsed()?.isPaid) {
+                <span class="paid-badge">Paid</span>
+              }
+            </div>
+            <h1 class="article-title">{{ parsed()?.title }}</h1>
+            @if (parsed()?.subtitle) {
+              <p class="resource-subtitle">{{ parsed().subtitle }}</p>
+            }
+            @if (parsed()?.publishedDate) {
+              <div class="article-byline">
+                <span>{{ parsed().publishedDate }}</span>
+              </div>
+            }
+          </div>
+
+          @if (parsed()?.description) {
+            <p class="resource-desc" [innerHTML]="parsed().description"></p>
+          }
+
+          @if (parsed()?.externalUrl) {
+            <div class="resource-url">🔗 <em>{{ parsed().externalUrl }}</em></div>
+          }
+
+          @if (parsed()?.tags?.length) {
+            <div class="tag-row">
+              @for (tag of parsed().tags; track tag) {
+                <span class="tag">{{ tag }}</span>
+              }
+            </div>
+          }
+        </div>
+
+      } @else if (section() === 'artists') {
+        <!-- ── 3D Artist ── -->
+        <div class="article-wrap">
+          @if (parsed()?.ogImage) {
+            <img class="hero-img"
+                 [src]="'https://www.allthethings.dev' + parsed().ogImage"
+                 [alt]="parsed()?.name || ''" />
+          } @else {
+            <div class="hero-placeholder">{{ parsed()?.name || 'Artist' }}</div>
+          }
+
+          <div class="article-meta">
+            <h1 class="article-title">{{ parsed()?.name }}</h1>
+            @if (parsed()?.shortDescription) {
+              <p class="article-desc">{{ parsed().shortDescription }}</p>
+            }
+            <div class="article-byline">
+              @if (parsed()?.publishedDate) {
+                <span>{{ parsed().publishedDate }}</span>
+              }
+              @if (parsed()?.featured) {
+                <span class="byline-sep">·</span>
+                <span>Featured</span>
+              }
+            </div>
+          </div>
+
+          @if (parsed()?.longDescription) {
+            <p class="block-para">{{ parsed().longDescription }}</p>
+          }
+
+          @if (parsed()?.youtubeVideoId) {
+            <div class="block-placeholder">▶ YouTube: {{ parsed().youtubeVideoId }}</div>
+          }
+
+          @if (parsed()?.keywords?.length) {
+            <div class="tag-row">
+              @for (tag of parsed().keywords; track tag) {
+                <span class="tag">{{ tag }}</span>
+              }
+            </div>
+          }
+
+          @if (parsed()?.links) {
+            <div class="resource-url">
+              @for (entry of objectEntries(parsed().links); track entry[0]) {
+                🔗 {{ entry[0] }}: <em>{{ entry[1] }}</em>
+              }
+            </div>
+          }
+        </div>
+
       } @else {
-        <!-- ── Resource / Artist or blog without content ── -->
+        <!-- ── Fallback meta card ── -->
         <div class="meta-card">
           @for (field of metaFields(); track field.key) {
             <div class="meta-row">
@@ -297,10 +392,10 @@ import { SectionKey } from '../file-browser/file-browser';
 
     .hero-img {
       width: 100%;
-      height: 200px;
-      object-fit: cover;
+      height: auto;
       border-radius: 6px;
       margin-bottom: 20px;
+      display: block;
     }
 
     .hero-placeholder {
@@ -495,7 +590,89 @@ import { SectionKey } from '../file-browser/file-browser';
     .ad-placeholder { background: #fff8e8; border-color: #f0c040; color: #a06000; }
     .unknown { background: #fff0f0; border-color: #f0a0a0; color: #c00; }
 
-    /* ── Resource / Artist meta card ── */
+    /* ── Resource layout ── */
+    .resource-header { margin-bottom: 20px; }
+
+    .resource-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .difficulty-badge {
+      display: inline-block;
+      background: #444;
+      color: #ccc;
+      font-family: sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 8px;
+      border-radius: 3px;
+    }
+
+    .paid-badge {
+      display: inline-block;
+      background: #c8a000;
+      color: #fff;
+      font-family: sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 8px;
+      border-radius: 3px;
+    }
+
+    .resource-subtitle {
+      font-size: 15px;
+      color: #777;
+      font-family: sans-serif;
+      margin: 0 0 8px;
+      font-weight: 600;
+    }
+
+    .resource-desc {
+      font-size: 15px;
+      color: #444;
+      line-height: 1.65;
+      font-family: sans-serif;
+      margin: 0 0 16px;
+    }
+
+    .resource-url {
+      font-family: 'Consolas', monospace;
+      font-size: 11px;
+      color: #888;
+      background: #f5f5f5;
+      padding: 6px 10px;
+      border-radius: 4px;
+      margin-bottom: 14px;
+      word-break: break-all;
+    }
+
+    .resource-url em { color: #0066cc; font-style: normal; }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 14px;
+    }
+
+    .tag {
+      background: #f0f0f0;
+      color: #555;
+      font-family: sans-serif;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      border: 1px solid #ddd;
+    }
+
+    /* ── Resource / Artist meta card (fallback) ── */
     .meta-card {
       padding: 20px;
       font-family: sans-serif;
@@ -679,5 +856,10 @@ export class ComposePreview {
   seealsoIds(items: any[]): string {
     if (!Array.isArray(items)) return '';
     return items.map((i) => i?.id ?? '?').join(', ');
+  }
+
+  objectEntries(obj: Record<string, any>): [string, any][] {
+    if (!obj || typeof obj !== 'object') return [];
+    return Object.entries(obj);
   }
 }

@@ -6,6 +6,7 @@ import {
   computed,
   HostListener,
 } from '@angular/core';
+import { ServerConfig } from '../compose.service';
 import { CommonModule } from '@angular/common';
 import { ComposeService } from '../compose.service';
 import {
@@ -104,7 +105,6 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
   standalone: true,
   imports: [CommonModule, FileBrowser, JsonEditor, BlockPalette, ComposePreview],
   host: {
-    '[class.fullscreen]': 'isFullscreen()',
     '[class.resizing]': 'isDraggingResize()',
   },
   template: `
@@ -154,13 +154,13 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
           @if (state() === 'deploying') { Publishing… } @else { ↑ Publish }
         </button>
 
-        <!-- Fullscreen toggle -->
+        <!-- Config -->
         <button
-          class="tb-btn fullscreen-btn"
-          (click)="toggleFullscreen()"
-          [title]="isFullscreen() ? 'Exit fullscreen' : 'Fullscreen'"
+          class="tb-btn config-btn"
+          (click)="openConfigDialog()"
+          title="Netlify configuration"
         >
-          {{ isFullscreen() ? '⊡' : '⊞' }}
+          ⚙ Config
         </button>
       </div>
     </div>
@@ -225,6 +225,51 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
           <div class="dialog-actions">
             <button class="tb-btn" (click)="showDeployDialog.set(false)">Cancel</button>
             <button class="tb-btn deploy-btn" (click)="deploy()">Publish ↑</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Config dialog -->
+    @if (showConfigDialog()) {
+      <div class="dialog-backdrop" (click)="showConfigDialog.set(false)">
+        <div class="dialog config-dialog" (click)="$event.stopPropagation()">
+          <h3 class="dialog-title">⚙ Netlify Configuration</h3>
+          <p class="dialog-desc">
+            Saved to <code>scripts/compose-config.json</code> on this machine only — never committed to git.
+          </p>
+
+          <div class="config-fields">
+            <label class="config-label">
+              <span>Personal Access Token</span>
+              <input class="config-input" type="password"
+                     [value]="configTokenInput()"
+                     (input)="configTokenInput.set($any($event.target).value)"
+                     placeholder="Leave blank to keep existing token" />
+            </label>
+            <label class="config-label">
+              <span>JSON Site ID <span class="config-hint">(json.allthethings.dev)</span></span>
+              <input class="config-input" type="text"
+                     [value]="configSiteIdInput()"
+                     (input)="configSiteIdInput.set($any($event.target).value)"
+                     placeholder="e.g. 20491b0f-49a7-4951-9310-04003ded9637" />
+            </label>
+            <label class="config-label">
+              <span>Main Site Build Hook URL <span class="config-hint">(allthethings.dev)</span></span>
+              <input class="config-input" type="text"
+                     [value]="configBuildHookInput()"
+                     (input)="configBuildHookInput.set($any($event.target).value)"
+                     placeholder="https://api.netlify.com/build_hooks/..." />
+            </label>
+          </div>
+
+          @if (configSaveStatus()) {
+            <p class="config-status">{{ configSaveStatus() }}</p>
+          }
+
+          <div class="dialog-actions">
+            <button class="tb-btn" (click)="showConfigDialog.set(false)">Cancel</button>
+            <button class="tb-btn deploy-btn" (click)="saveConfig()">Save</button>
           </div>
         </div>
       </div>
@@ -317,7 +362,8 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
     .deploy-btn { border-color: #569cd6; color: #569cd6; }
     .deploy-btn:hover:not(:disabled) { background: #1b3a5a; }
 
-    .fullscreen-btn { padding: 4px 8px; font-size: 14px; }
+    .config-btn { border-color: #888; color: #aaa; }
+    .config-btn:hover:not(:disabled) { background: #3c3c3c; color: #fff; border-color: #aaa; }
 
 
     /* ── Panes ── */
@@ -332,19 +378,6 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
 
     /* Prevent grid children from overflowing their columns */
     .pane-container > * { min-width: 0; }
-
-    /* Fullscreen mode */
-    :host.fullscreen {
-      position: fixed;
-      top: 0;
-      right: 0;
-      bottom: 0;
-      left: 0;
-      z-index: 9999;
-      width: 100vw;
-      height: auto;
-      overflow: hidden;
-    }
 
     /* Resizing — lock cursor and suppress text selection across whole shell */
     :host.resizing {
@@ -373,13 +406,13 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
       background: #569cd6;
     }
 
-    /* ── Grid children: constrain height so pane-container doesn't overflow ── */
+    /* ── Grid children: fill pane-container height ── */
     app-file-browser,
     .editor-pane,
     .resize-handle,
     app-compose-preview,
     app-block-palette {
-      height: 80%;
+      height: 100%;
     }
 
     /* ── Editor pane ── */
@@ -462,6 +495,48 @@ type EditorState = 'idle' | 'loading' | 'saving' | 'deploying' | 'error';
       justify-content: flex-end;
       gap: 8px;
     }
+
+    /* ── Config dialog ── */
+    .config-dialog { width: 520px; }
+
+    .config-fields {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .config-label {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      font-size: 12px;
+      color: #aaa;
+    }
+
+    .config-hint { color: #666; font-size: 11px; }
+
+    .config-input {
+      background: #1e1e1e;
+      border: 1px solid #444;
+      color: #ccc;
+      padding: 6px 10px;
+      border-radius: 3px;
+      font-family: 'Consolas', monospace;
+      font-size: 12px;
+      outline: none;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .config-input:focus { border-color: #569cd6; }
+
+    .config-status {
+      font-size: 12px;
+      color: #4ec9b0;
+      margin: 0 0 12px;
+      font-family: 'Consolas', monospace;
+    }
   `],
 })
 export class ComposeShell {
@@ -480,7 +555,6 @@ export class ComposeShell {
   isDirty = signal(false);
   state = signal<EditorState>('idle');
   statusMessage = signal<string>('');
-  isFullscreen = signal(false);
   previewWidth = signal(300);
   isDraggingResize = signal(false);
   private _lastDragX = 0;
@@ -495,8 +569,49 @@ export class ComposeShell {
   // Deploy dialog
   showDeployDialog = signal(false);
 
-  toggleFullscreen() {
-    this.isFullscreen.set(!this.isFullscreen());
+  // Config dialog
+  showConfigDialog = signal(false);
+  configTokenInput = signal('');
+  configSiteIdInput = signal('');
+  configBuildHookInput = signal('');
+  configSaveStatus = signal('');
+
+  openConfigDialog(): void {
+    this.configSaveStatus.set('');
+    this.compose.getServerConfig().subscribe({
+      next: (cfg) => {
+        this.configTokenInput.set(cfg.netlifyToken);     // already masked by server
+        this.configSiteIdInput.set(cfg.netlifySiteId);
+        this.configBuildHookInput.set(cfg.mainSiteBuildHook);
+        this.showConfigDialog.set(true);
+      },
+      error: () => this.showConfigDialog.set(true),
+    });
+  }
+
+  saveConfig(): void {
+    const token = this.configTokenInput();
+    const payload: any = {
+      netlifySiteId: this.configSiteIdInput(),
+      mainSiteBuildHook: this.configBuildHookInput(),
+    };
+    // Only send token if the user typed a new one (not the "***xxxx" masked placeholder)
+    if (token && !token.startsWith('***')) {
+      payload.netlifyToken = token;
+    }
+
+    this.compose.saveServerConfig(payload).subscribe({
+      next: () => {
+        this.configSaveStatus.set('✓ Saved');
+        setTimeout(() => {
+          this.configSaveStatus.set('');
+          this.showConfigDialog.set(false);
+        }, 1200);
+      },
+      error: (err) => {
+        this.configSaveStatus.set(`Error: ${err.error?.error || err.message}`);
+      },
+    });
   }
 
   onResizeStart(event: MouseEvent) {
