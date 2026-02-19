@@ -10,6 +10,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const archiver = require('archiver');
 
 const app = express();
 const PORT = 3001;
@@ -17,36 +18,61 @@ const PORT = 3001;
 // Sibling directory: ../all-the-tools-json relative to project root
 const JSON_REPO = path.resolve(__dirname, '..', '..', 'all-the-tools-json');
 
-// ── Netlify deploy hook ───────────────────────────────────────────────────────
-// Read hook URL from scripts/compose-config.json or NETLIFY_HOOK_URL env var
-let netlifyHookUrl = process.env.NETLIFY_HOOK_URL || '';
+// ── Netlify deploy via API ────────────────────────────────────────────────────
+// Reads netlifyToken + netlifySiteId from scripts/compose-config.json
+// No CLI login needed — token travels with the project config file.
+let netlifyToken = process.env.NETLIFY_TOKEN || '';
+let netlifySiteId = process.env.NETLIFY_SITE_ID || '';
+
 const CONFIG_FILE = path.join(__dirname, 'compose-config.json');
-if (!netlifyHookUrl && fs.existsSync(CONFIG_FILE)) {
+if (fs.existsSync(CONFIG_FILE)) {
   try {
     const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
-    netlifyHookUrl = cfg.netlifyHookUrl || '';
+    netlifyToken  = netlifyToken  || cfg.netlifyToken  || '';
+    netlifySiteId = netlifySiteId || cfg.netlifySiteId || '';
   } catch (e) {
     console.warn('Warning: could not read compose-config.json:', e.message);
   }
 }
 
-function triggerNetlifyDeploy() {
+/**
+ * Zips JSON_REPO and POSTs it to the Netlify deploy API.
+ * No CLI required — uses the personal access token from config.
+ */
+function deployViaZip() {
   return new Promise((resolve, reject) => {
-    try {
-      const url = new URL(netlifyHookUrl);
-      const req = https.request(
-        { hostname: url.hostname, path: url.pathname + url.search, method: 'POST', headers: { 'Content-Length': 0 } },
-        (res) => {
-          let body = '';
-          res.on('data', (chunk) => (body += chunk));
-          res.on('end', () => resolve({ status: res.statusCode, body }));
-        }
-      );
-      req.on('error', reject);
-      req.end();
-    } catch (err) {
-      reject(err);
-    }
+    const archive = archiver('zip', { zlib: { level: 6 } });
+
+    const req = https.request(
+      {
+        hostname: 'api.netlify.com',
+        path: `/api/v1/sites/${netlifySiteId}/deploys`,
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${netlifyToken}`,
+          'Content-Type': 'application/zip',
+          'Transfer-Encoding': 'chunked',
+        },
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => (body += chunk));
+        res.on('end', () => {
+          try { resolve({ status: res.statusCode, data: JSON.parse(body) }); }
+          catch { resolve({ status: res.statusCode, body }); }
+        });
+      }
+    );
+
+    req.on('error', reject);
+    archive.on('error', reject);
+
+    archive.pipe(req);
+    archive.glob('**/*', {
+      cwd: JSON_REPO,
+      ignore: ['**/.git/**', '**/node_modules/**', '**/.DS_Store'],
+    });
+    archive.finalize();
   });
 }
 
@@ -169,20 +195,21 @@ app.post('/api/file', (req, res) => {
   }
 });
 
-// POST /api/deploy — trigger Netlify deploy hook
+// POST /api/deploy — zip JSON_REPO and deploy via Netlify API
 app.post('/api/deploy', async (req, res) => {
-  if (!netlifyHookUrl) {
+  if (!netlifyToken || !netlifySiteId) {
     return res.status(500).json({
-      error: 'Netlify hook URL not configured. Add netlifyHookUrl to scripts/compose-config.json.',
+      error: 'Netlify credentials not configured. Add netlifyToken and netlifySiteId to scripts/compose-config.json.',
     });
   }
 
   try {
-    const result = await triggerNetlifyDeploy();
+    const result = await deployViaZip();
     if (result.status >= 200 && result.status < 300) {
-      res.json({ success: true, message: 'Netlify deploy triggered successfully.' });
+      res.json({ success: true, message: 'Published to Netlify successfully.' });
     } else {
-      res.status(500).json({ error: `Netlify returned status ${result.status}: ${result.body}` });
+      const detail = result.data?.message || result.body || result.status;
+      res.status(500).json({ error: `Netlify API error: ${detail}` });
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -195,5 +222,6 @@ app.listen(PORT, () => {
   console.log(`\n✓ Compose server running at http://localhost:${PORT}`);
   console.log(`  JSON repo: ${JSON_REPO}`);
   console.log(`  Sections: blog, resources, artists`);
-  console.log(`  Netlify hook: ${netlifyHookUrl ? '✓ configured' : '✗ NOT configured (add to scripts/compose-config.json)'}\n`);
+  const netlifyOk = netlifyToken && netlifySiteId;
+  console.log(`  Netlify deploy: ${netlifyOk ? '✓ configured' : '✗ NOT configured (add netlifyToken + netlifySiteId to scripts/compose-config.json)'}\n`);
 });
